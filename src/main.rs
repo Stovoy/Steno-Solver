@@ -1,11 +1,12 @@
 use chess::{Board, ChessMove, MoveGen, Piece, BoardStatus, Square};
-use shakmaty::{Chess, Position, uci::Uci, san::San};
+use shakmaty::{Chess, Position, uci::Uci, san::San, fen::Fen, fen, CastlingMode};
 use rayon::prelude::*;
 use std::sync::Mutex;
 use std::env;
 use std::io;
 use std::io::Write;
-
+use std::str::FromStr;
+use std::error::Error;
 
 fn parse_steno_string(steno: &str) -> Result<Vec<char>, String> {
     let valid_chars = [
@@ -106,7 +107,7 @@ fn check_steno_constraints(board: &Board, last_move: Option<ChessMove>, last_pie
     }
 }
 
-fn enumerate_positions(board: Board, depth: u8, path: Vec<ChessMove>, last_move: Option<ChessMove>, last_piece_moved: Option<Piece>, piece_on_dest: Option<Piece>, results: &Mutex<u32>, steno_constraints: &[char]) {
+fn enumerate_positions(board: Board, depth: u8, path: Vec<ChessMove>, fen_string: &Option<String>, last_move: Option<ChessMove>, last_piece_moved: Option<Piece>, piece_on_dest: Option<Piece>, results: &Mutex<u32>, steno_constraints: &[char]) {
     if !check_steno_constraints(&board, last_move, last_piece_moved, piece_on_dest, depth, steno_constraints) {
         return;
     }
@@ -117,6 +118,10 @@ fn enumerate_positions(board: Board, depth: u8, path: Vec<ChessMove>, last_move:
 
         let mut moves = Vec::new();
         let mut position = Chess::default();
+        if let Some(fen) = fen_string.clone() {
+            let fen_position: Fen = fen.parse().unwrap();
+            position = fen_position.into_position(CastlingMode::Standard).unwrap();
+        }
         for mov in &path {
             let uci: Uci = mov.to_string().parse().unwrap();
             let uci_move = uci.to_move(&position).unwrap();
@@ -143,29 +148,45 @@ fn enumerate_positions(board: Board, depth: u8, path: Vec<ChessMove>, last_move:
         let mut new_path = path.clone();
         new_path.push(mov);
 
-        enumerate_positions(new_board, depth + 1, new_path, Some(mov), piece_moved, piece_on_dest, results, steno_constraints);
+        enumerate_positions(new_board, depth + 1, new_path, &fen_string, Some(mov), piece_moved, piece_on_dest, results, steno_constraints);
     });
 }
 
-fn solve(steno_constraints: &[char]) {
-    let board = Board::default();
+fn solve(board: Board, fen_string: Option<String>, steno_constraints: &[char]) {
     let results = Mutex::new(0);
-    enumerate_positions(board, 0, Vec::new(), None, None, None, &results, &steno_constraints);
+    enumerate_positions(board, 0, Vec::new(), &fen_string, None, None, None, &results, &steno_constraints);
 
     let solutions_count = results.lock().unwrap();
     println!("Number of solutions found: {}", solutions_count);
 }
 
-fn main() {
+fn main() -> Result<(), Box<chess::Error>> {
     let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        eprintln!("Usage: steno_solver <steno_string>");
-        return;
-    }
-    let steno_string = &args[1];
+    let mut fen_string = None;
+    let mut steno_string = None;
 
-    match parse_steno_string(steno_string) {
-        Ok(steno_constraints) => solve(&steno_constraints),
+    let mut args_iter = args.iter().skip(1);
+    while let Some(arg) = args_iter.next() {
+        match arg.as_str() {
+            "--fen" => fen_string = args_iter.next().cloned(),
+            _ => steno_string = Some(arg.clone()),
+        }
+    }
+
+    if steno_string.is_none() {
+        eprintln!("Usage: steno_solver [--fen \"<fen_string>\"] <steno_string>");
+        return Ok(());
+    }
+
+    let board = match fen_string.clone() {
+        Some(fen) => Board::from_str(&fen)?,
+        None => Board::default(),
+    };
+
+    match parse_steno_string(&steno_string.unwrap()) {
+        Ok(steno_constraints) => solve(board, fen_string, &steno_constraints),
         Err(err) => eprintln!("{}", err),
     }
+
+    Ok(())
 }
