@@ -46,6 +46,9 @@ fn check_steno_constraints(board: &Board, last_move: Option<ChessMove>, last_pie
         'K' => last_piece_moved.unwrap() == Piece::King,
         'P' => last_piece_moved.unwrap() == Piece::Pawn,
         'x' => {
+            if piece_on_dest.is_some() {
+                return true;
+            }
             if let Some(last_piece) = last_piece_moved {
                 // Check en passant
                 if last_piece == Piece::Pawn {
@@ -56,7 +59,7 @@ fn check_steno_constraints(board: &Board, last_move: Option<ChessMove>, last_pie
                     return is_diagonal_move && piece_on_dest.is_none();
                 }
             }
-            piece_on_dest.is_some()
+            return false;
         }
         '%' => {
             if let Some(last_piece) = last_piece_moved {
@@ -136,7 +139,7 @@ fn enumerate_positions(board: Board, depth: u8, path: Vec<ChessMove>, last_move:
 
 fn solve(steno_constraints: &[char]) {
     let board = Board::default();
-    let results = Mutex::new(0); // Changed from Vec to u32 for counting
+    let results = Mutex::new(0);
     enumerate_positions(board, 0, Vec::new(), None, None, None, &results, &steno_constraints);
 
     let solutions_count = results.lock().unwrap();
