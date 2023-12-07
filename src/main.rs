@@ -2,6 +2,8 @@ use chess::{Board, ChessMove, MoveGen, Piece, BoardStatus, Square};
 use rayon::prelude::*;
 use std::sync::Mutex;
 use std::env;
+use std::io;
+use std::io::Write;
 
 
 fn parse_steno_string(steno: &str) -> Result<Vec<char>, String> {
@@ -67,7 +69,7 @@ fn check_steno_constraints(board: &Board, last_move: Option<ChessMove>, last_pie
                     return is_diagonal_move && piece_on_dest.is_none();
                 }
             }
-            return false
+            return false;
         }
         '=' => matches!(board.status(), BoardStatus::Stalemate),
         'o' => {
@@ -100,13 +102,21 @@ fn check_steno_constraints(board: &Board, last_move: Option<ChessMove>, last_pie
     }
 }
 
-fn enumerate_positions(board: Board, depth: u8, path: Vec<ChessMove>, last_move: Option<ChessMove>, last_piece_moved: Option<Piece>, piece_on_dest: Option<Piece>, results: &Mutex<Vec<Vec<ChessMove>>>, steno_constraints: &[char]) {
+fn enumerate_positions(board: Board, depth: u8, path: Vec<ChessMove>, last_move: Option<ChessMove>, last_piece_moved: Option<Piece>, piece_on_dest: Option<Piece>, results: &Mutex<u32>, steno_constraints: &[char]) {
     if !check_steno_constraints(&board, last_move, last_piece_moved, piece_on_dest, depth, steno_constraints) {
         return;
     }
 
     if depth as usize == steno_constraints.len() {
-        results.lock().unwrap().push(path);
+        let stdout = io::stdout();
+        let mut handle = stdout.lock();
+
+        for mov in &path {
+            write!(handle, "{} ", mov).unwrap();
+        }
+        writeln!(handle).unwrap();
+        let mut num_results = results.lock().unwrap();
+        *num_results += 1;
         return;
     }
 
@@ -126,17 +136,11 @@ fn enumerate_positions(board: Board, depth: u8, path: Vec<ChessMove>, last_move:
 
 fn solve(steno_constraints: &[char]) {
     let board = Board::default();
-    let results = Mutex::new(Vec::new());
+    let results = Mutex::new(0); // Changed from Vec to u32 for counting
     enumerate_positions(board, 0, Vec::new(), None, None, None, &results, &steno_constraints);
 
-    let solutions = results.lock().unwrap();
-    println!("Number of solutions found: {}", solutions.len());
-    for game in solutions.iter() {
-        for mov in game {
-            print!("{} ", mov);
-        }
-        println!();
-    }
+    let solutions_count = results.lock().unwrap();
+    println!("Number of solutions found: {}", solutions_count);
 }
 
 fn main() {
