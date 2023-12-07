@@ -1,10 +1,14 @@
-use chess::{Board, ChessMove, MoveGen, Piece, BoardStatus};
+use chess::{Board, ChessMove, MoveGen, Piece, BoardStatus, Square};
 use rayon::prelude::*;
 use std::sync::Mutex;
 use std::env;
 
+
 fn parse_steno_string(steno: &str) -> Result<Vec<char>, String> {
-    let valid_chars = ['~', '1', '2', '3', '4', '5', '6', '7', '8', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'x', '+', '#', 'L', 'N', 'R', 'Q', 'K', 'P'];
+    let valid_chars = [
+        '~', '1', '2', '3', '4', '5', '6', '7', '8', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'x',
+        '+', '#', 'L', 'N', 'R', 'Q', 'K', 'P', '%', '=', 'o', '0', 'r', 'n', 'l', 'q'
+    ];
     let mut parsed_chars = Vec::new();
 
     for ch in steno.chars() {
@@ -26,10 +30,19 @@ fn check_steno_constraints(board: &Board, last_move: Option<ChessMove>, last_pie
     let constraint = steno_constraints[(depth - 1) as usize];
     let last_move_unwrapped = last_move.unwrap();
     let dest_square = last_move_unwrapped.get_dest();
+    let source_square = last_move_unwrapped.get_source();
     match constraint {
         '~' => true,
         '1'..='8' => dest_square.get_rank().to_index() == constraint.to_digit(10).unwrap() as usize - 1,
         'a'..='h' => dest_square.get_file().to_index() == constraint as usize - 'a' as usize,
+        '+' => board.checkers().count() > 0,
+        '#' => matches!(board.status(), BoardStatus::Checkmate),
+        'L' => last_piece_moved.unwrap() == Piece::Bishop,
+        'N' => last_piece_moved.unwrap() == Piece::Knight,
+        'R' => last_piece_moved.unwrap() == Piece::Rook,
+        'Q' => last_piece_moved.unwrap() == Piece::Queen,
+        'K' => last_piece_moved.unwrap() == Piece::King,
+        'P' => last_piece_moved.unwrap() == Piece::Pawn,
         'x' => {
             if let Some(last_piece) = last_piece_moved {
                 // Check en passant
@@ -43,14 +56,46 @@ fn check_steno_constraints(board: &Board, last_move: Option<ChessMove>, last_pie
             }
             piece_on_dest.is_some()
         }
-        '+' => board.checkers().count() > 0,
-        '#' => matches!(board.status(), BoardStatus::Checkmate),
-        'L' => last_piece_moved.unwrap() == Piece::Bishop,
-        'N' => last_piece_moved.unwrap() == Piece::Knight,
-        'R' => last_piece_moved.unwrap() == Piece::Rook,
-        'Q' => last_piece_moved.unwrap() == Piece::Queen,
-        'K' => last_piece_moved.unwrap() == Piece::King,
-        'P' => last_piece_moved.unwrap() == Piece::Pawn,
+        '%' => {
+            if let Some(last_piece) = last_piece_moved {
+                // Check en passant
+                if last_piece == Piece::Pawn {
+                    let source_square = last_move_unwrapped.get_source();
+                    let dest_square = last_move_unwrapped.get_dest();
+                    let is_diagonal_move = source_square.get_file() != dest_square.get_file();
+
+                    return is_diagonal_move && piece_on_dest.is_none();
+                }
+            }
+            return false
+        }
+        '=' => matches!(board.status(), BoardStatus::Stalemate),
+        'o' => {
+            (last_piece_moved.unwrap() == Piece::King) &&
+                ((source_square == Square::E1 && dest_square == Square::G1) || // White castling kingside
+                    (source_square == Square::E8 && dest_square == Square::G8)) // Black castling kingside
+        }
+        '0' => {
+            (last_piece_moved.unwrap() == Piece::King) &&
+                ((source_square == Square::E1 && dest_square == Square::C1) || // White castling queenside
+                    (source_square == Square::E8 && dest_square == Square::C8)) // Black castling queenside
+        }
+        'r' => {
+            let promotion = last_move_unwrapped.get_promotion();
+            promotion == Some(Piece::Rook)
+        }
+        'n' => {
+            let promotion = last_move_unwrapped.get_promotion();
+            promotion == Some(Piece::Knight)
+        }
+        'l' => {
+            let promotion = last_move_unwrapped.get_promotion();
+            promotion == Some(Piece::Bishop)
+        }
+        'q' => {
+            let promotion = last_move_unwrapped.get_promotion();
+            promotion == Some(Piece::Queen)
+        }
         _ => false,
     }
 }
