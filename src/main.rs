@@ -1,4 +1,5 @@
 use chess::{Board, ChessMove, MoveGen, Piece, BoardStatus, Square};
+use shakmaty::{Chess, Position, uci::Uci, san::San};
 use rayon::prelude::*;
 use std::sync::Mutex;
 use std::env;
@@ -111,15 +112,24 @@ fn enumerate_positions(board: Board, depth: u8, path: Vec<ChessMove>, last_move:
     }
 
     if depth as usize == steno_constraints.len() {
-        let stdout = io::stdout();
-        let mut handle = stdout.lock();
-
-        for mov in &path {
-            write!(handle, "{} ", mov).unwrap();
-        }
-        writeln!(handle).unwrap();
         let mut num_results = results.lock().unwrap();
         *num_results += 1;
+
+        let mut moves = Vec::new();
+        let mut position = Chess::default();
+        for mov in &path {
+            let uci: Uci = mov.to_string().parse().unwrap();
+            let uci_move = uci.to_move(&position).unwrap();
+            let san_move = San::from_move(&position, &uci_move);
+            moves.push(san_move.to_string());
+            position = position.clone().play(&uci_move).unwrap();
+        }
+
+        let lichess_url = format!("https://lichess.org/analysis/pgn/{}", moves.join("_"));
+
+        let stdout = io::stdout();
+        let mut handle = stdout.lock();
+        writeln!(handle, "{}", lichess_url).unwrap();
         return;
     }
 
